@@ -1543,6 +1543,102 @@ app.get('/leaderboard', requireUser, (req, res) => {
       }
     }
     content = h2hContent;
+  } else if (tab === 'einzel') {
+    const rows = db.prepare(`
+      SELECT p.id, p.name, p.color, p.avatar_path,
+             COUNT(DISTINCT ms.match_id) as played,
+             COUNT(DISTINCT CASE WHEN ms.is_winner = 1 THEN ms.match_id END) as wins
+      FROM profiles p
+      JOIN match_side_members msm ON msm.profile_id = p.id
+      JOIN match_sides ms ON ms.id = msm.side_id
+      JOIN matches m ON m.id = ms.match_id
+      WHERE m.mode = '1v1'
+      GROUP BY p.id
+      ORDER BY wins DESC,
+               CASE WHEN COUNT(DISTINCT ms.match_id) > 0
+                    THEN CAST(COUNT(DISTINCT CASE WHEN ms.is_winner = 1 THEN ms.match_id END) AS REAL) / COUNT(DISTINCT ms.match_id)
+                    ELSE 0 END DESC,
+               p.name ASC
+    `).all();
+
+    content = `
+      <div class="card" style="overflow-x:auto;">
+        <p class="subtle" style="margin-bottom:12px;">Nur 1v1-Spiele</p>
+        <table class="lb-table">
+          <thead><tr>
+            <th>#</th><th>Spieler</th><th>Siege</th><th>Win-%</th>
+          </tr></thead>
+          <tbody>
+            ${rows.map((r, i) => {
+              const winPct = r.played > 0 ? ((r.wins / r.played) * 100).toFixed(0) : '–';
+              return `<tr>
+                <td style="font-family:'Bebas Neue';font-size:1.2rem;color:${i < 3 ? 'var(--gold)' : 'var(--muted)'};">${i + 1}</td>
+                <td><div style="display:flex;align-items:center;gap:8px;">${avatarHtml(r, 24)} <span style="font-weight:600;">${escapeHtml(r.name)}</span></div></td>
+                <td style="color:var(--green);font-weight:700;">${r.wins}</td>
+                <td>${winPct}%</td>
+              </tr>`;
+            }).join('')}
+            ${rows.length === 0 ? '<tr><td colspan="4" class="subtle">Noch keine 1v1-Spiele.</td></tr>' : ''}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } else if (tab === 'teams') {
+    const teamRows = db.prepare(`
+      SELECT
+        GROUP_CONCAT(p.name, ' & ') as team_name,
+        GROUP_CONCAT(p.id) as player_ids,
+        COUNT(DISTINCT ms.match_id) as played,
+        COUNT(DISTINCT CASE WHEN ms.is_winner = 1 THEN ms.match_id END) as wins
+      FROM match_sides ms
+      JOIN match_side_members msm ON msm.side_id = ms.id
+      JOIN profiles p ON p.id = msm.profile_id
+      JOIN matches m ON m.id = ms.match_id
+      WHERE m.mode = '2v2'
+      GROUP BY ms.id
+      HAVING COUNT(msm.profile_id) = 2
+    `).all();
+
+    // Aggregate by sorted player pair
+    const teamMap = new Map();
+    teamRows.forEach(r => {
+      const key = r.player_ids.split(',').map(Number).sort((a, b) => a - b).join(',');
+      if (!teamMap.has(key)) {
+        teamMap.set(key, { ids: key, name: r.team_name, played: 0, wins: 0 });
+      }
+      const t = teamMap.get(key);
+      t.played += r.played;
+      t.wins += r.wins;
+    });
+
+    const teams = [...teamMap.values()]
+      .sort((a, b) => b.wins - a.wins || (b.played > 0 ? b.wins / b.played : 0) - (a.played > 0 ? a.wins / a.played : 0))
+      .slice(0, 30);
+
+    content = `
+      <div class="card" style="overflow-x:auto;">
+        <p class="subtle" style="margin-bottom:12px;">Nur 2v2-Spiele – Team-Kombinationen</p>
+        <table class="lb-table">
+          <thead><tr>
+            <th>#</th><th>Team</th><th>Siege</th><th>Win-%</th>
+          </tr></thead>
+          <tbody>
+            ${teams.map((t, i) => {
+              const winPct = t.played > 0 ? ((t.wins / t.played) * 100).toFixed(0) : '–';
+              const playerProfiles = t.ids.split(',').map(id => db.prepare('SELECT * FROM profiles WHERE id = ?').get(Number(id))).filter(Boolean);
+              const avatars = playerProfiles.map(p => avatarHtml(p, 22)).join('');
+              return `<tr>
+                <td style="font-family:'Bebas Neue';font-size:1.2rem;color:${i < 3 ? 'var(--gold)' : 'var(--muted)'};">${i + 1}</td>
+                <td><div style="display:flex;align-items:center;gap:6px;">${avatars} <span style="font-weight:600;">${escapeHtml(t.name)}</span></div></td>
+                <td style="color:var(--green);font-weight:700;">${t.wins}</td>
+                <td>${winPct}%</td>
+              </tr>`;
+            }).join('')}
+            ${teams.length === 0 ? '<tr><td colspan="4" class="subtle">Noch keine 2v2-Spiele.</td></tr>' : ''}
+          </tbody>
+        </table>
+      </div>
+    `;
   } else if (tab === 'dominanz') {
     const rows = db.prepare(`
       SELECT p.id, p.name, p.color, p.avatar_path,
@@ -1577,7 +1673,9 @@ app.get('/leaderboard', requireUser, (req, res) => {
   }
 
   const tabs = [
-    { key: 'gesamt', label: 'Gesamtranking' },
+    { key: 'gesamt', label: 'Gesamt' },
+    { key: 'einzel', label: 'Einzelspieler' },
+    { key: 'teams', label: 'Teams' },
     { key: 'h2h', label: 'Head-to-Head' },
     { key: 'dominanz', label: 'Dominanz' },
   ];
