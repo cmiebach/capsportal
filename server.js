@@ -305,29 +305,21 @@ function layout(req, title, body, flash = '') {
     a { color: var(--blue); text-decoration: none; }
     a:hover { text-decoration: underline; }
 
-    /* Nav */
-    .nav {
+    /* Top header bar */
+    .top-bar {
       position: sticky; top: 0; z-index: 100;
       background: rgba(6,13,24,0.85);
       backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
       border-bottom: 1px solid var(--line);
-      padding: 0 12px;
+      padding: 0 16px;
+      padding-top: env(safe-area-inset-top, 0px);
     }
-    .nav-inner {
+    .top-bar-inner {
       max-width: 900px; margin: 0 auto;
       display: flex; align-items: center; justify-content: space-between;
-      height: 56px;
+      height: 52px;
     }
-    .nav-brand { font-family: 'Bebas Neue', cursive; font-size: 1.4rem; color: var(--green); }
-    .nav-links { display: flex; gap: 2px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-    .nav-links a {
-      display: flex; flex-direction: column; align-items: center; gap: 1px;
-      padding: 6px 10px; border-radius: 10px; font-size: 10px; color: var(--muted);
-      white-space: nowrap; text-decoration: none; min-width: 48px; min-height: 48px;
-      justify-content: center;
-    }
-    .nav-links a:hover, .nav-links a.active { color: var(--green); background: var(--green-dim); }
-    .nav-links .nav-icon { font-size: 18px; }
+    .nav-brand { font-family: 'Bebas Neue', cursive; font-size: 1.4rem; color: var(--green); text-decoration: none; }
     .nav-auth {
       display: flex; align-items: center; gap: 8px; flex-shrink: 0;
     }
@@ -337,8 +329,34 @@ function layout(req, title, body, flash = '') {
       color: var(--text); text-decoration: none;
     }
 
+    /* Bottom tab bar */
+    .tab-bar {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+      background: rgba(6,13,24,0.92);
+      backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      border-top: 1px solid var(--line);
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    .tab-bar-inner {
+      max-width: 900px; margin: 0 auto;
+      display: flex; align-items: stretch; justify-content: space-around;
+      height: 56px;
+    }
+    .tab-bar a {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 2px; flex: 1; padding: 6px 0;
+      font-size: 10px; color: var(--muted);
+      text-decoration: none; min-height: 48px;
+      transition: color 0.15s;
+    }
+    .tab-bar a:hover, .tab-bar a.active { color: var(--green); }
+    .tab-bar .tab-icon { font-size: 20px; line-height: 1; }
+
     /* Main */
-    .main { max-width: 900px; margin: 0 auto; padding: 20px 16px 80px; }
+    .main {
+      max-width: 900px; margin: 0 auto;
+      padding: 20px 16px calc(72px + env(safe-area-inset-bottom, 0px));
+    }
 
     /* Cards */
     .card {
@@ -551,28 +569,31 @@ function layout(req, title, body, flash = '') {
       .match-card .match-sides { flex-direction: column; }
       .match-card .match-vs { display: none; }
       .winner-radio { flex-direction: column; }
-      .nav-links a { padding: 6px 7px; font-size: 9px; }
+      .tab-bar a { font-size: 9px; }
       h1 { font-size: 1.6rem; }
     }
   </style>
 </head>
 <body>
   ${user ? `
-  <nav class="nav">
-    <div class="nav-inner">
+  <header class="top-bar">
+    <div class="top-bar-inner">
       <a href="/" class="nav-brand">🏓 Capsen</a>
-      <div class="nav-links">
-        ${navItems.map(n => `<a href="${n.href}"><span class="nav-icon">${n.icon}</span>${n.label}</a>`).join('')}
-      </div>
       <div class="nav-auth">
         <a href="/settings" class="user-pill">${avatarHtml(user, 20)}<span>${escapeHtml(user.name)}</span></a>
       </div>
     </div>
-  </nav>` : ''}
+  </header>` : ''}
   <main class="main">
     ${flashMsg ? `<div class="flash">${escapeHtml(flashMsg)}</div>` : ''}
     ${body}
   </main>
+  ${user ? `
+  <nav class="tab-bar">
+    <div class="tab-bar-inner">
+      ${navItems.map(n => `<a href="${n.href}"><span class="tab-icon">${n.icon}</span>${n.label}</a>`).join('')}
+    </div>
+  </nav>` : ''}
 </body>
 </html>`;
 }
@@ -1604,42 +1625,160 @@ app.get('/tournaments', requireUser, (req, res) => {
 
 app.get('/tournaments/new', requireUser, (req, res) => {
   const profiles = db.prepare('SELECT * FROM profiles ORDER BY name').all();
+  const profilesJson = JSON.stringify(profiles.map(p => ({ id: p.id, name: p.name })));
   const html = `
-    <div style="max-width:500px;margin:0 auto;">
+    <div style="max-width:600px;margin:0 auto;">
       <h1 style="margin-bottom:16px;">🥊 Neues Turnier</h1>
-      <form method="POST" action="/tournaments">
+      <form method="POST" action="/tournaments" id="tournament-form">
         <div class="form-group">
           <label>Turniername</label>
-          <input type="text" name="name" required placeholder="z.B. Sommer Capsen 2025" />
+          <input type="text" name="name" id="t-name" required placeholder="z.B. Sommer Capsen 2025" />
         </div>
         <div class="form-group">
           <label>Modus</label>
           <div style="display:flex;gap:10px;">
             <label class="check-item" style="flex:1;">
-              <input type="radio" name="mode" value="1v1" required checked />
+              <input type="radio" name="mode" value="1v1" required checked class="mode-radio" />
               <span>🏓 1v1</span>
             </label>
             <label class="check-item" style="flex:1;">
-              <input type="radio" name="mode" value="2v2" />
+              <input type="radio" name="mode" value="2v2" class="mode-radio" />
               <span>👥 2v2</span>
             </label>
           </div>
         </div>
         <div class="form-group">
-          <label>Teilnehmer (min. 2 für 1v1, min. 4 für 2v2)</label>
+          <label id="participants-label">Teilnehmer (min. 2 für 1v1, min. 4 für 2v2)</label>
           <div class="check-grid">
             ${profiles.map(p => `
               <label class="check-item">
-                <input type="checkbox" name="participants[]" value="${p.id}" />
+                <input type="checkbox" name="participants[]" value="${p.id}" class="participant-cb" />
                 ${avatarHtml(p, 24)}
                 <span>${escapeHtml(p.name)}</span>
               </label>
             `).join('')}
           </div>
+          <div id="participant-count" class="subtle" style="margin-top:8px;"></div>
         </div>
-        <button type="submit" style="width:100%;">Turnier erstellen</button>
+
+        <div id="bracket-preview" style="display:none;">
+          <h2 style="margin-bottom:12px;">📋 Turnierplan Vorschau</h2>
+          <div id="bracket-preview-content" class="bracket"></div>
+        </div>
+
+        <button type="submit" id="submit-btn" style="width:100%;margin-top:16px;" disabled>Turnier erstellen</button>
       </form>
     </div>
+
+    <script>
+    (function() {
+      var profiles = ${profilesJson};
+      var form = document.getElementById('tournament-form');
+      var previewWrap = document.getElementById('bracket-preview');
+      var previewContent = document.getElementById('bracket-preview-content');
+      var countEl = document.getElementById('participant-count');
+      var submitBtn = document.getElementById('submit-btn');
+      var nameInput = document.getElementById('t-name');
+
+      function getMode() {
+        var r = form.querySelector('.mode-radio:checked');
+        return r ? r.value : '1v1';
+      }
+
+      function getSelected() {
+        var cbs = form.querySelectorAll('.participant-cb:checked');
+        var ids = [];
+        cbs.forEach(function(cb) { ids.push(Number(cb.value)); });
+        return ids;
+      }
+
+      function getProfileName(id) {
+        for (var i = 0; i < profiles.length; i++) {
+          if (profiles[i].id === id) return profiles[i].name;
+        }
+        return '?';
+      }
+
+      function roundLabel(round, total) {
+        if (round === total) return 'Finale';
+        if (round === total - 1) return 'Halbfinale';
+        if (round === total - 2) return 'Viertelfinale';
+        return 'Runde ' + round;
+      }
+
+      function updatePreview() {
+        var selected = getSelected();
+        var mode = getMode();
+        var minP = mode === '2v2' ? 4 : 2;
+        var hasName = nameInput.value.trim().length > 0;
+
+        countEl.textContent = selected.length + ' Teilnehmer ausgewählt' +
+          (selected.length < minP ? ' (min. ' + minP + ')' : '');
+
+        if (selected.length < minP || !hasName) {
+          previewWrap.style.display = 'none';
+          submitBtn.disabled = true;
+          submitBtn.style.opacity = '0.4';
+          return;
+        }
+
+        submitBtn.disabled = false;
+        submitBtn.style.opacity = '1';
+
+        // Generate bracket preview
+        var n = selected.length;
+        var rounds = Math.ceil(Math.log2(n));
+        var slots = Math.pow(2, rounds);
+        var shuffled = selected.slice(); // don't actually shuffle for preview, keep order
+        while (shuffled.length < slots) shuffled.push(null);
+
+        var html = '';
+        for (var r = 0; r < rounds; r++) {
+          var matchesInRound = Math.pow(2, rounds - r - 1);
+          html += '<div class="bracket-round"><div class="bracket-label">' +
+            roundLabel(r + 1, rounds) + '</div>';
+
+          for (var p = 0; p < matchesInRound; p++) {
+            if (r === 0) {
+              var s1 = shuffled[p * 2];
+              var s2 = shuffled[p * 2 + 1];
+              var s1Name = s1 ? getProfileName(s1) : null;
+              var s2Name = s2 ? getProfileName(s2) : null;
+              var isBye = s1Name && !s2Name;
+
+              html += '<div class="bracket-match">' +
+                '<div class="bracket-side' + (isBye ? ' winner' : '') + '">' +
+                  (isBye ? '🏆 ' : '') + (s1Name || '<span class="tbd">—</span>') +
+                '</div>' +
+                '<div style="border-top:1px solid var(--line);margin:2px 0;"></div>' +
+                '<div class="bracket-side' + (!s2Name ? ' tbd' : '') + '">' +
+                  (s2Name || (s1Name ? 'Freilos' : '—')) +
+                '</div></div>';
+            } else {
+              html += '<div class="bracket-match">' +
+                '<div class="bracket-side tbd">TBD</div>' +
+                '<div style="border-top:1px solid var(--line);margin:2px 0;"></div>' +
+                '<div class="bracket-side tbd">TBD</div></div>';
+            }
+          }
+          html += '</div>';
+        }
+
+        previewContent.innerHTML = html;
+        previewWrap.style.display = 'block';
+      }
+
+      form.querySelectorAll('.participant-cb').forEach(function(cb) {
+        cb.addEventListener('change', updatePreview);
+      });
+      form.querySelectorAll('.mode-radio').forEach(function(r) {
+        r.addEventListener('change', updatePreview);
+      });
+      nameInput.addEventListener('input', updatePreview);
+
+      updatePreview();
+    })();
+    <\/script>
   `;
   res.send(layout(req, 'Neues Turnier', html));
 });
