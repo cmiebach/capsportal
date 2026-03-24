@@ -1,0 +1,27 @@
+services:
+  capsportal:
+    build: .
+    container_name: capsportal
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      HOUSE_PASSWORD: capsen4ever
+      SESSION_SECRET: change-me-too
+      SMTP_USER: ""
+      SMTP_PASS: ""
+      GOOGLE_DRIVE_PHOTOS_FOLDER_ID: "1astQn6_EuLIkz0zrwi5IjJA92Lxwxn86"
+      GOOGLE_DRIVE_BACKUP_FOLDER_ID: "1Wm0VW9aWgYBEKeNXDZgPTjVVFNMZ4yHy"
+    volumes:
+      - ./storage:/app/storage
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.capsportal.rule=Host(`spielportal.srv1487908.hstgr.cloud`)"
+      - "traefik.http.routers.capsportal.entrypoints=websecure"
+      - "traefik.http.routers.capsportal.tls.certresolver=letsencrypt"
+      - "traefik.http.services.capsportal.loadbalancer.server.port=3000"
+    networks:
+      - openclaw-rozz_default
+
+networks:
+  openclaw-rozz_default:
+    external: true
