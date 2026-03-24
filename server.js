@@ -1108,13 +1108,10 @@ app.get('/matches/new', requireUser, (req, res) => {
   const now = new Date();
   const localNow = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 
-  const profileCheckboxes = (sideName, sideNum) => profiles.map(p => `
-    <label class="check-item">
-      <input type="checkbox" name="side${sideNum}[]" value="${p.id}" class="side-checkbox" data-side="${sideNum}" />
-      ${avatarHtml(p, 24)}
-      <span>${escapeHtml(p.name)}</span>
-    </label>
-  `).join('');
+  const profilesJson = JSON.stringify(profiles.map(p => ({
+    id: p.id, name: p.name, color: p.color,
+    avatar: p.avatar_path || null
+  })));
 
   const html = `
     <h1 style="margin-bottom:16px;">➕ Neues Spiel</h1>
@@ -1152,27 +1149,73 @@ app.get('/matches/new', requireUser, (req, res) => {
           <input type="datetime-local" name="played_at" value="${localNow}" />
         </div>
 
-        <div class="card" style="margin-bottom:16px;">
-          <h2 style="margin-bottom:12px;">Seite 1</h2>
-          <div class="form-group">
-            <label>Teamname (optional)</label>
-            <input type="text" name="side1_name" id="side1-name" placeholder="Teamname optional" />
+        <!-- 1v1: simple player select -->
+        <div id="section-1v1" style="display:none;">
+          <div class="card" style="margin-bottom:16px;">
+            <h2 style="margin-bottom:12px;">Spieler 1</h2>
+            <div class="check-grid">
+              ${profiles.map(p => `
+                <label class="check-item">
+                  <input type="radio" name="player1" value="${p.id}" />
+                  ${avatarHtml(p, 24)}
+                  <span>${escapeHtml(p.name)}</span>
+                </label>
+              `).join('')}
+            </div>
           </div>
-          <div class="form-group">
-            <label>Spieler</label>
-            <div class="check-grid">${profileCheckboxes('Seite 1', 1)}</div>
+          <div class="card" style="margin-bottom:16px;">
+            <h2 style="margin-bottom:12px;">Spieler 2</h2>
+            <div class="check-grid">
+              ${profiles.map(p => `
+                <label class="check-item">
+                  <input type="radio" name="player2" value="${p.id}" />
+                  ${avatarHtml(p, 24)}
+                  <span>${escapeHtml(p.name)}</span>
+                </label>
+              `).join('')}
+            </div>
           </div>
         </div>
 
-        <div class="card" style="margin-bottom:16px;">
-          <h2 style="margin-bottom:12px;">Seite 2</h2>
-          <div class="form-group">
-            <label>Teamname (optional)</label>
-            <input type="text" name="side2_name" id="side2-name" placeholder="Teamname optional" />
+        <!-- 2v2 / flipcup: team select with names -->
+        <div id="section-team" style="display:none;">
+          <div class="card" style="margin-bottom:16px;">
+            <h2 style="margin-bottom:12px;">Team 1</h2>
+            <div class="form-group">
+              <label>Teamname (optional)</label>
+              <input type="text" name="side1_name" id="side1-name" placeholder="Teamname optional" />
+            </div>
+            <div class="form-group">
+              <label>Spieler</label>
+              <div class="check-grid">
+                ${profiles.map(p => `
+                  <label class="check-item">
+                    <input type="checkbox" name="side1_players" value="${p.id}" />
+                    ${avatarHtml(p, 24)}
+                    <span>${escapeHtml(p.name)}</span>
+                  </label>
+                `).join('')}
+              </div>
+            </div>
           </div>
-          <div class="form-group">
-            <label>Spieler</label>
-            <div class="check-grid">${profileCheckboxes('Seite 2', 2)}</div>
+          <div class="card" style="margin-bottom:16px;">
+            <h2 style="margin-bottom:12px;">Team 2</h2>
+            <div class="form-group">
+              <label>Teamname (optional)</label>
+              <input type="text" name="side2_name" id="side2-name" placeholder="Teamname optional" />
+            </div>
+            <div class="form-group">
+              <label>Spieler</label>
+              <div class="check-grid">
+                ${profiles.map(p => `
+                  <label class="check-item">
+                    <input type="checkbox" name="side2_players" value="${p.id}" />
+                    ${avatarHtml(p, 24)}
+                    <span>${escapeHtml(p.name)}</span>
+                  </label>
+                `).join('')}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1229,6 +1272,8 @@ app.get('/matches/new', requireUser, (req, res) => {
 
     <script>
     var currentMode = '';
+    var profiles = ${profilesJson};
+
     function selectMode(mode) {
       currentMode = mode;
       document.getElementById('mode-input').value = mode;
@@ -1238,6 +1283,9 @@ app.get('/matches/new', requireUser, (req, res) => {
       var regular = document.getElementById('regular-section');
       var tournament = document.getElementById('tournament-section');
       var submit = document.getElementById('submit-section');
+      var section1v1 = document.getElementById('section-1v1');
+      var sectionTeam = document.getElementById('section-team');
+
       if (mode === 'tournament') {
         regular.style.display = 'none';
         tournament.style.display = 'block';
@@ -1246,15 +1294,47 @@ app.get('/matches/new', requireUser, (req, res) => {
         regular.style.display = 'block';
         tournament.style.display = 'none';
         submit.style.display = 'block';
+        if (mode === '1v1') {
+          section1v1.style.display = 'block';
+          sectionTeam.style.display = 'none';
+        } else {
+          section1v1.style.display = 'none';
+          sectionTeam.style.display = 'block';
+        }
+      }
+      updateWinnerLabels();
+    }
+
+    function getPlayerName(id) {
+      for (var i = 0; i < profiles.length; i++) {
+        if (profiles[i].id === id) return profiles[i].name;
+      }
+      return '';
+    }
+
+    function updateWinnerLabels() {
+      var l1 = document.getElementById('winner-label-1');
+      var l2 = document.getElementById('winner-label-2');
+      if (currentMode === '1v1') {
+        var p1 = document.querySelector('input[name="player1"]:checked');
+        var p2 = document.querySelector('input[name="player2"]:checked');
+        l1.textContent = p1 ? getPlayerName(Number(p1.value)) : 'Spieler 1';
+        l2.textContent = p2 ? getPlayerName(Number(p2.value)) : 'Spieler 2';
+      } else {
+        var s1n = document.getElementById('side1-name');
+        var s2n = document.getElementById('side2-name');
+        l1.textContent = (s1n && s1n.value) || 'Team 1';
+        l2.textContent = (s2n && s2n.value) || 'Team 2';
       }
     }
 
-    document.getElementById('side1-name').addEventListener('input', function() {
-      document.getElementById('winner-label-1').textContent = this.value || 'Seite 1';
+    document.querySelectorAll('input[name="player1"], input[name="player2"]').forEach(function(r) {
+      r.addEventListener('change', updateWinnerLabels);
     });
-    document.getElementById('side2-name').addEventListener('input', function() {
-      document.getElementById('winner-label-2').textContent = this.value || 'Seite 2';
-    });
+    var s1n = document.getElementById('side1-name');
+    var s2n = document.getElementById('side2-name');
+    if (s1n) s1n.addEventListener('input', updateWinnerLabels);
+    if (s2n) s2n.addEventListener('input', updateWinnerLabels);
 
     function loadPendingMatches() {
       var tid = document.getElementById('tournament-select').value;
@@ -1311,25 +1391,41 @@ app.post('/matches', requireUser, upload.single('photo'), (req, res) => {
     return redirectWithMessage(res, '/matches/new', 'Bitte alle Pflichtfelder ausfüllen');
   }
 
-  const side1Players = (Array.isArray(req.body['side1[]']) ? req.body['side1[]'] : (req.body['side1[]'] ? [req.body['side1[]']] : [])).map(Number).filter(Boolean);
-  const side2Players = (Array.isArray(req.body['side2[]']) ? req.body['side2[]'] : (req.body['side2[]'] ? [req.body['side2[]']] : [])).map(Number).filter(Boolean);
+  let side1Players, side2Players, side1Name, side2Name;
 
-  if (side1Players.length === 0 || side2Players.length === 0) {
-    if (req.file) fs.unlinkSync(req.file.path);
-    return redirectWithMessage(res, '/matches/new', 'Beide Seiten brauchen mindestens einen Spieler');
-  }
+  if (mode === '1v1') {
+    const p1 = Number(req.body.player1);
+    const p2 = Number(req.body.player2);
+    if (!p1 || !p2) {
+      if (req.file) fs.unlinkSync(req.file.path);
+      return redirectWithMessage(res, '/matches/new', 'Bitte beide Spieler auswählen');
+    }
+    if (p1 === p2) {
+      if (req.file) fs.unlinkSync(req.file.path);
+      return redirectWithMessage(res, '/matches/new', 'Bitte zwei verschiedene Spieler auswählen');
+    }
+    side1Players = [p1];
+    side2Players = [p2];
+    const p1Profile = db.prepare('SELECT name FROM profiles WHERE id = ?').get(p1);
+    const p2Profile = db.prepare('SELECT name FROM profiles WHERE id = ?').get(p2);
+    side1Name = p1Profile ? p1Profile.name : 'Spieler 1';
+    side2Name = p2Profile ? p2Profile.name : 'Spieler 2';
+  } else {
+    const toArr = (v) => (Array.isArray(v) ? v : (v ? [v] : [])).map(Number).filter(Boolean);
+    side1Players = toArr(req.body.side1_players);
+    side2Players = toArr(req.body.side2_players);
 
-  if (mode === '1v1' && (side1Players.length !== 1 || side2Players.length !== 1)) {
-    if (req.file) fs.unlinkSync(req.file.path);
-    return redirectWithMessage(res, '/matches/new', '1v1 braucht genau einen Spieler pro Seite');
+    if (side1Players.length === 0 || side2Players.length === 0) {
+      if (req.file) fs.unlinkSync(req.file.path);
+      return redirectWithMessage(res, '/matches/new', 'Beide Seiten brauchen mindestens einen Spieler');
+    }
+    if (mode === '2v2' && (side1Players.length !== 2 || side2Players.length !== 2)) {
+      if (req.file) fs.unlinkSync(req.file.path);
+      return redirectWithMessage(res, '/matches/new', '2v2 braucht genau zwei Spieler pro Seite');
+    }
+    side1Name = req.body.side1_name || 'Team 1';
+    side2Name = req.body.side2_name || 'Team 2';
   }
-  if (mode === '2v2' && (side1Players.length !== 2 || side2Players.length !== 2)) {
-    if (req.file) fs.unlinkSync(req.file.path);
-    return redirectWithMessage(res, '/matches/new', '2v2 braucht genau zwei Spieler pro Seite');
-  }
-
-  const side1Name = req.body.side1_name || 'Seite 1';
-  const side2Name = req.body.side2_name || 'Seite 2';
   const winnerSide = Number(winner);
   const cupsVal = cups_remaining !== '' && cups_remaining != null ? Number(cups_remaining) : null;
   const otVal = Number(overtime) || 0;
@@ -1397,7 +1493,10 @@ app.get('/matches/:id', requireUser, (req, res) => {
     </div>
     <div class="card-header">
       <h1>Spiel #${match.id}</h1>
-      <div>${modeBadge(match.mode)}</div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        ${modeBadge(match.mode)}
+        ${!match.tournament_id ? `<a href="/matches/${match.id}/edit" class="button ghost small-btn">✏️ Bearbeiten</a>` : ''}
+      </div>
     </div>
     <div class="subtle" style="margin-bottom:16px;">
       📅 ${formatDate(match.played_at)}
@@ -1408,6 +1507,213 @@ app.get('/matches/:id', requireUser, (req, res) => {
     ${match.notes ? `<div class="card"><h2>📝 Notizen</h2><p>${escapeHtml(match.notes)}</p></div>` : ''}
   `;
   res.send(layout(req, `Spiel #${match.id}`, html));
+});
+
+// ─── MATCH EDIT ──────────────────────────────────────────────────────────────
+app.get('/matches/:id/edit', requireUser, (req, res) => {
+  const match = db.prepare('SELECT * FROM matches WHERE id = ?').get(Number(req.params.id));
+  if (!match) return res.redirect('/matches?msg=' + encodeURIComponent('Spiel nicht gefunden'));
+  if (match.tournament_id) return res.redirect('/matches/' + match.id + '?msg=' + encodeURIComponent('Turnier-Matches können nicht bearbeitet werden'));
+
+  const sides = db.prepare('SELECT * FROM match_sides WHERE match_id = ?').all(match.id);
+  const side1 = sides[0] || {};
+  const side2 = sides[1] || {};
+  const side1Members = side1.id ? db.prepare('SELECT profile_id FROM match_side_members WHERE side_id = ?').all(side1.id).map(r => r.profile_id) : [];
+  const side2Members = side2.id ? db.prepare('SELECT profile_id FROM match_side_members WHERE side_id = ?').all(side2.id).map(r => r.profile_id) : [];
+  const winnerSide = side1.is_winner ? 1 : (side2.is_winner ? 2 : 0);
+  const cupsRemaining = (side1.is_winner ? side1.cups_remaining : side2.cups_remaining);
+
+  const profiles = db.prepare('SELECT * FROM profiles ORDER BY name').all();
+  const playedAt = match.played_at ? match.played_at.slice(0, 16) : '';
+
+  let playersHtml = '';
+  if (match.mode === '1v1') {
+    playersHtml = `
+      <div class="card" style="margin-bottom:16px;">
+        <h2 style="margin-bottom:12px;">Spieler 1</h2>
+        <div class="check-grid">
+          ${profiles.map(p => `
+            <label class="check-item">
+              <input type="radio" name="player1" value="${p.id}" ${side1Members.includes(p.id) ? 'checked' : ''} />
+              ${avatarHtml(p, 24)} <span>${escapeHtml(p.name)}</span>
+            </label>
+          `).join('')}
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:16px;">
+        <h2 style="margin-bottom:12px;">Spieler 2</h2>
+        <div class="check-grid">
+          ${profiles.map(p => `
+            <label class="check-item">
+              <input type="radio" name="player2" value="${p.id}" ${side2Members.includes(p.id) ? 'checked' : ''} />
+              ${avatarHtml(p, 24)} <span>${escapeHtml(p.name)}</span>
+            </label>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  } else {
+    playersHtml = `
+      <div class="card" style="margin-bottom:16px;">
+        <h2 style="margin-bottom:12px;">Team 1</h2>
+        <div class="form-group">
+          <label>Teamname</label>
+          <input type="text" name="side1_name" value="${escapeHtml(side1.side_name || '')}" placeholder="Teamname optional" />
+        </div>
+        <div class="form-group">
+          <label>Spieler</label>
+          <div class="check-grid">
+            ${profiles.map(p => `
+              <label class="check-item">
+                <input type="checkbox" name="side1_players" value="${p.id}" ${side1Members.includes(p.id) ? 'checked' : ''} />
+                ${avatarHtml(p, 24)} <span>${escapeHtml(p.name)}</span>
+              </label>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:16px;">
+        <h2 style="margin-bottom:12px;">Team 2</h2>
+        <div class="form-group">
+          <label>Teamname</label>
+          <input type="text" name="side2_name" value="${escapeHtml(side2.side_name || '')}" placeholder="Teamname optional" />
+        </div>
+        <div class="form-group">
+          <label>Spieler</label>
+          <div class="check-grid">
+            ${profiles.map(p => `
+              <label class="check-item">
+                <input type="checkbox" name="side2_players" value="${p.id}" ${side2Members.includes(p.id) ? 'checked' : ''} />
+                ${avatarHtml(p, 24)} <span>${escapeHtml(p.name)}</span>
+              </label>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  const html = `
+    <div style="max-width:600px;margin:0 auto;">
+      <div style="margin-bottom:12px;"><a href="/matches/${match.id}" class="subtle">← Zurück</a></div>
+      <h1 style="margin-bottom:16px;">✏️ Spiel #${match.id} bearbeiten</h1>
+      <div style="margin-bottom:16px;">${modeBadge(match.mode)}</div>
+      <form method="POST" action="/matches/${match.id}/edit">
+        <input type="hidden" name="mode" value="${match.mode}" />
+        <div class="form-group">
+          <label>Datum & Uhrzeit</label>
+          <input type="datetime-local" name="played_at" value="${playedAt}" />
+        </div>
+        ${playersHtml}
+        <div class="form-group">
+          <label>🏆 Gewinner</label>
+          <div class="winner-radio">
+            <label class="winner-option">
+              <input type="radio" name="winner" value="1" required ${winnerSide === 1 ? 'checked' : ''} />
+              🏆 Seite 1 gewinnt
+            </label>
+            <label class="winner-option">
+              <input type="radio" name="winner" value="2" ${winnerSide === 2 ? 'checked' : ''} />
+              🏆 Seite 2 gewinnt
+            </label>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="form-group">
+            <label>🍺 Restbecher</label>
+            <input type="number" name="cups_remaining" min="0" max="10" value="${cupsRemaining != null ? cupsRemaining : ''}" placeholder="0" />
+          </div>
+          <div class="form-group">
+            <label>⏱ Verlängerungen</label>
+            <input type="number" name="overtime" min="0" max="5" value="${match.overtime || 0}" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>📝 Notizen</label>
+          <textarea name="notes">${escapeHtml(match.notes || '')}</textarea>
+        </div>
+        <button type="submit" style="width:100%;margin-bottom:12px;">Änderungen speichern</button>
+      </form>
+      <form method="POST" action="/matches/${match.id}/delete" onsubmit="return confirm('Spiel wirklich löschen?')">
+        <button type="submit" class="button danger-btn" style="width:100%;">🗑 Spiel löschen</button>
+      </form>
+    </div>
+  `;
+  res.send(layout(req, 'Spiel bearbeiten', html));
+});
+
+app.post('/matches/:id/edit', requireUser, (req, res) => {
+  const matchId = Number(req.params.id);
+  const match = db.prepare('SELECT * FROM matches WHERE id = ?').get(matchId);
+  if (!match || match.tournament_id) return res.redirect('/matches');
+
+  const { mode, played_at, notes, winner, cups_remaining, overtime } = req.body;
+  const winnerSide = Number(winner);
+  const cupsVal = cups_remaining !== '' && cups_remaining != null ? Number(cups_remaining) : null;
+  const otVal = Number(overtime) || 0;
+
+  let side1Players, side2Players, side1Name, side2Name;
+  if (mode === '1v1') {
+    const p1 = Number(req.body.player1);
+    const p2 = Number(req.body.player2);
+    if (!p1 || !p2 || p1 === p2) return redirectWithMessage(res, `/matches/${matchId}/edit`, 'Bitte zwei verschiedene Spieler auswählen');
+    side1Players = [p1];
+    side2Players = [p2];
+    const p1P = db.prepare('SELECT name FROM profiles WHERE id = ?').get(p1);
+    const p2P = db.prepare('SELECT name FROM profiles WHERE id = ?').get(p2);
+    side1Name = p1P ? p1P.name : 'Spieler 1';
+    side2Name = p2P ? p2P.name : 'Spieler 2';
+  } else {
+    const toArr = (v) => (Array.isArray(v) ? v : (v ? [v] : [])).map(Number).filter(Boolean);
+    side1Players = toArr(req.body.side1_players);
+    side2Players = toArr(req.body.side2_players);
+    if (side1Players.length === 0 || side2Players.length === 0) return redirectWithMessage(res, `/matches/${matchId}/edit`, 'Beide Seiten brauchen Spieler');
+    side1Name = req.body.side1_name || 'Team 1';
+    side2Name = req.body.side2_name || 'Team 2';
+  }
+
+  const updateMatch = db.transaction(() => {
+    db.prepare('UPDATE matches SET played_at = ?, notes = ?, overtime = ? WHERE id = ?')
+      .run(played_at, notes || null, otVal, matchId);
+
+    // Delete old sides and members
+    const oldSides = db.prepare('SELECT id FROM match_sides WHERE match_id = ?').all(matchId);
+    for (const s of oldSides) {
+      db.prepare('DELETE FROM match_side_members WHERE side_id = ?').run(s.id);
+    }
+    db.prepare('DELETE FROM match_sides WHERE match_id = ?').run(matchId);
+
+    // Re-insert sides
+    const insertSide = db.prepare('INSERT INTO match_sides (match_id, side_name, is_winner, cups_remaining) VALUES (?, ?, ?, ?)');
+    const insertMember = db.prepare('INSERT INTO match_side_members (side_id, profile_id) VALUES (?, ?)');
+
+    const s1 = insertSide.run(matchId, side1Name, winnerSide === 1 ? 1 : 0, winnerSide === 1 ? cupsVal : null);
+    side1Players.forEach(pid => insertMember.run(s1.lastInsertRowid, pid));
+
+    const s2 = insertSide.run(matchId, side2Name, winnerSide === 2 ? 1 : 0, winnerSide === 2 ? cupsVal : null);
+    side2Players.forEach(pid => insertMember.run(s2.lastInsertRowid, pid));
+  });
+
+  updateMatch();
+  redirectWithMessage(res, '/matches/' + matchId, 'Spiel aktualisiert!');
+});
+
+app.post('/matches/:id/delete', requireUser, (req, res) => {
+  const matchId = Number(req.params.id);
+  const match = db.prepare('SELECT * FROM matches WHERE id = ?').get(matchId);
+  if (!match || match.tournament_id) return res.redirect('/matches');
+
+  const deleteMatch = db.transaction(() => {
+    const sides = db.prepare('SELECT id FROM match_sides WHERE match_id = ?').all(matchId);
+    for (const s of sides) {
+      db.prepare('DELETE FROM match_side_members WHERE side_id = ?').run(s.id);
+    }
+    db.prepare('DELETE FROM match_sides WHERE match_id = ?').run(matchId);
+    db.prepare('DELETE FROM matches WHERE id = ?').run(matchId);
+  });
+
+  deleteMatch();
+  redirectWithMessage(res, '/matches', 'Spiel gelöscht');
 });
 
 // ─── LEADERBOARD ─────────────────────────────────────────────────────────────
